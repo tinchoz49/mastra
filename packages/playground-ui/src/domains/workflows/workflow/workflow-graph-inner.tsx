@@ -8,6 +8,7 @@ import { DefaultNode, WorkflowDefaultNode } from './workflow-default-node';
 import { WorkflowAfterNode } from './workflow-after-node';
 import { WorkflowLoopResultNode } from './workflow-loop-result-node';
 import { NestedNode, WorkflowNestedNode } from './workflow-nested-node';
+import { GroupNode, WorkflowGroupNode } from './workflow-group-node';
 import { ZoomSlider } from './zoom-slider';
 
 import { useCurrentRun } from '../context/use-current-run';
@@ -50,6 +51,7 @@ export function WorkflowGraphInner({ workflow }: WorkflowGraphInnerProps) {
     'after-node': WorkflowAfterNode,
     'loop-result-node': WorkflowLoopResultNode,
     'nested-node': (props: NodeProps<NestedNode>) => <WorkflowNestedNode {...props} stepsFlow={stepsFlow} />,
+    'group-node': (props: NodeProps<GroupNode>) => <WorkflowGroupNode {...props} />,
   };
 
   return (

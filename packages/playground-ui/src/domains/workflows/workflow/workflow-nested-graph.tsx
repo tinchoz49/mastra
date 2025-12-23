@@ -10,6 +10,7 @@ import { WorkflowLoopResultNode } from './workflow-loop-result-node';
 import { useEffect, useMemo, useState } from 'react';
 import Spinner from '@/components/ui/spinner';
 import { NestedNode, WorkflowNestedNode } from './workflow-nested-node';
+import { GroupNode, WorkflowGroupNode } from './workflow-group-node';
 import { ZoomSlider } from './zoom-slider';
 import { useCurrentRun } from '../context/use-current-run';
 
@@ -56,6 +57,9 @@ export function WorkflowNestedGraph({ stepGraph, open, workflowName }: WorkflowN
     'loop-result-node': WorkflowLoopResultNode,
     'nested-node': (props: NodeProps<NestedNode>) => (
       <WorkflowNestedNode parentWorkflowName={workflowName} {...props} stepsFlow={stepsFlow} />
+    ),
+    'group-node': (props: NodeProps<GroupNode>) => (
+      <WorkflowGroupNode parentWorkflowName={workflowName} {...props} />
     ),
   };
 

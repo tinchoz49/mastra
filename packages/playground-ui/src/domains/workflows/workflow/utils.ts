@@ -644,5 +644,28 @@ export const constructNodesAndEdges = ({
   }
 
   const result = processStepGraph(stepGraph, { idPrefix: '', stepPathPrefix: '' });
-  return { nodes: result.nodes, edges: result.edges };
+
+  // Compute stepsFlow from edges and attach to each node's data
+  const stepsFlow = result.edges.reduce(
+    (acc, edge) => {
+      if (edge.data) {
+        const stepId = edge.data.nextStepId as string;
+        const prevStepId = edge.data.previousStepId as string;
+        return {
+          ...acc,
+          [stepId]: [...new Set([...(acc[stepId] || []), prevStepId])],
+        };
+      }
+      return acc;
+    },
+    {} as Record<string, string[]>,
+  );
+
+  // Attach stepsFlow to each node's data
+  const nodesWithStepsFlow = result.nodes.map(node => ({
+    ...node,
+    data: { ...node.data, stepsFlow },
+  }));
+
+  return { nodes: nodesWithStepsFlow, edges: result.edges };
 };

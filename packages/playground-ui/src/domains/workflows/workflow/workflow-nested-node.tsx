@@ -25,19 +25,18 @@ export type NestedNode = Node<
     isParallel?: boolean;
     canSuspend?: boolean;
     isForEach?: boolean;
+    stepsFlow?: Record<string, string[]>;
   },
   'nested-node'
 >;
 
 export interface WorkflowNestedNodeProps {
   parentWorkflowName?: string;
-  stepsFlow: Record<string, string[]>;
 }
 
 export function WorkflowNestedNode({
   data,
   parentWorkflowName,
-  stepsFlow,
 }: NodeProps<NestedNode> & WorkflowNestedNodeProps) {
   const { steps } = useCurrentRun();
   const { showNestedGraph } = useWorkflowStepDetail();
@@ -53,6 +52,7 @@ export function WorkflowNestedNode({
     isParallel,
     canSuspend,
     isForEach,
+    stepsFlow = {},
   } = data;
 
   const fullLabel = parentWorkflowName ? `${parentWorkflowName}.${label}` : label;

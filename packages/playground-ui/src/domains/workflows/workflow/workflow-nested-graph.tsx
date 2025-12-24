@@ -29,39 +29,24 @@ export function WorkflowNestedGraph({ stepGraph, open, workflowName }: WorkflowN
   const [edges] = useEdgesState(initialEdges);
   const { steps } = useCurrentRun();
 
-  const stepsFlow = useMemo(() => {
-    return initialEdges.reduce(
-      (acc, edge) => {
-        if (edge.data) {
-          const stepId = edge.data.nextStepId as string;
-          const prevStepId = edge.data.previousStepId as string;
-
-          return {
-            ...acc,
-            [stepId]: [...new Set([...(acc[stepId] || []), prevStepId])],
-          };
-        }
-
-        return acc;
-      },
-      {} as Record<string, string[]>,
-    );
-  }, [initialEdges]);
-
-  const nodeTypes = {
-    'default-node': (props: NodeProps<DefaultNode>) => (
-      <WorkflowDefaultNode parentWorkflowName={workflowName} {...props} stepsFlow={stepsFlow} />
-    ),
-    'condition-node': WorkflowConditionNode,
-    'after-node': WorkflowAfterNode,
-    'loop-result-node': WorkflowLoopResultNode,
-    'nested-node': (props: NodeProps<NestedNode>) => (
-      <WorkflowNestedNode parentWorkflowName={workflowName} {...props} stepsFlow={stepsFlow} />
-    ),
-    'group-node': (props: NodeProps<GroupNode>) => (
-      <WorkflowGroupNode parentWorkflowName={workflowName} {...props} />
-    ),
-  };
+  // Memoize nodeTypes - workflowName is stable during a run, so this won't cause remounting
+  const nodeTypes = useMemo(
+    () => ({
+      'default-node': (props: NodeProps<DefaultNode>) => (
+        <WorkflowDefaultNode parentWorkflowName={workflowName} {...props} />
+      ),
+      'condition-node': WorkflowConditionNode,
+      'after-node': WorkflowAfterNode,
+      'loop-result-node': WorkflowLoopResultNode,
+      'nested-node': (props: NodeProps<NestedNode>) => (
+        <WorkflowNestedNode parentWorkflowName={workflowName} {...props} />
+      ),
+      'group-node': (props: NodeProps<GroupNode>) => (
+        <WorkflowGroupNode parentWorkflowName={workflowName} {...props} />
+      ),
+    }),
+    [workflowName],
+  );
 
   useEffect(() => {
     if (open) {

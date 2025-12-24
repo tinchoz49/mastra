@@ -25,19 +25,18 @@ export type DefaultNode = Node<
     isParallel?: boolean;
     canSuspend?: boolean;
     isForEach?: boolean;
+    stepsFlow?: Record<string, string[]>;
   },
   'default-node'
 >;
 
 export interface WorkflowDefaultNodeProps {
   parentWorkflowName?: string;
-  stepsFlow: Record<string, string[]>;
 }
 
 export function WorkflowDefaultNode({
   data,
   parentWorkflowName,
-  stepsFlow,
 }: NodeProps<DefaultNode> & WorkflowDefaultNodeProps) {
   const { steps } = useCurrentRun();
   const {
@@ -53,6 +52,7 @@ export function WorkflowDefaultNode({
     isParallel,
     canSuspend,
     isForEach,
+    stepsFlow = {},
   } = data;
 
   // Use stepPath if available (for nested workflows), otherwise fall back to legacy behavior

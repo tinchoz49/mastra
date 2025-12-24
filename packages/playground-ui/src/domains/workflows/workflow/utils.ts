@@ -85,7 +85,12 @@ function processStepGraph(
 
   // Layout the nodes
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB' });
+  g.setGraph({
+    rankdir: 'TB', // Top to bottom
+    nodesep: 50, // Horizontal spacing between nodes in same rank
+    ranksep: 80, // Vertical spacing between ranks
+    align: 'UL', // Align nodes to upper-left for consistent positioning
+  });
 
   // Only layout nodes that belong directly to this level (not nested children)
   const directNodes = nodes.filter(n => n.parentId === context.parentGroupId);
@@ -100,11 +105,33 @@ function processStepGraph(
     g.setNode(node.id, { width, height });
   });
 
-  // Only use edges between direct nodes for layout
+  // Build layout edges - need to handle edges that cross into groups
   const directNodeIds = new Set(directNodes.map(n => n.id));
-  edges
-    .filter(e => directNodeIds.has(e.source) && directNodeIds.has(e.target))
-    .forEach(e => g.setEdge(e.source, e.target));
+
+  // Map child nodes to their direct parent group
+  const nodeToParentGroup = new Map<string, string>();
+  childNodes.forEach(child => {
+    // Find the direct parent group at this level
+    let parentId = child.parentId;
+    while (parentId && !directNodeIds.has(parentId)) {
+      const parentNode = nodes.find(n => n.id === parentId);
+      parentId = parentNode?.parentId;
+    }
+    if (parentId) {
+      nodeToParentGroup.set(child.id, parentId);
+    }
+  });
+
+  // Add edges for layout, mapping child nodes to their parent groups
+  edges.forEach(e => {
+    const sourceId = directNodeIds.has(e.source) ? e.source : nodeToParentGroup.get(e.source);
+    const targetId = directNodeIds.has(e.target) ? e.target : nodeToParentGroup.get(e.target);
+
+    // Only add edge if both endpoints resolve to direct nodes and they're different
+    if (sourceId && targetId && sourceId !== targetId) {
+      g.setEdge(sourceId, targetId);
+    }
+  });
 
   Dagre.layout(g);
 

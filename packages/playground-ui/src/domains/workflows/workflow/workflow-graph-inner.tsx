@@ -60,16 +60,21 @@ export function WorkflowGraphInner({ workflow }: WorkflowGraphInnerProps) {
         nodes={nodes}
         edges={edges.map(e => ({
           ...e,
+          zIndex: e.zIndex ?? 1, // Ensure all edges have zIndex for group rendering
           style: {
             ...e.style,
             stroke:
-              steps[e.data?.previousStepId as string]?.status === 'success' && steps[e.data?.nextStepId as string]
+              // Use stepPath for nested workflow steps, fallback to stepId for backwards compatibility
+              steps[e.data?.previousStepPath as string]?.status === 'success' && steps[e.data?.nextStepPath as string]
                 ? '#22c55e'
-                : e.data?.conditionNode &&
-                    !steps[e.data?.previousStepId as string] &&
-                    Boolean(steps[e.data?.nextStepId as string]?.status)
+                : steps[e.data?.previousStepId as string]?.status === 'success' && steps[e.data?.nextStepId as string]
                   ? '#22c55e'
-                  : undefined,
+                  : e.data?.conditionNode &&
+                      !steps[e.data?.previousStepPath as string] &&
+                      !steps[e.data?.previousStepId as string] &&
+                      (Boolean(steps[e.data?.nextStepPath as string]?.status) || Boolean(steps[e.data?.nextStepId as string]?.status))
+                    ? '#22c55e'
+                    : undefined,
           },
         }))}
         nodeTypes={nodeTypes}

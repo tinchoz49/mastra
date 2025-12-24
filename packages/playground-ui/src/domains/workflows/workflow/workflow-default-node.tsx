@@ -15,6 +15,7 @@ export type DefaultNode = Node<
   {
     label: string;
     stepId?: string;
+    stepPath?: string;
     description?: string;
     withoutTopHandle?: boolean;
     withoutBottomHandle?: boolean;
@@ -42,6 +43,7 @@ export function WorkflowDefaultNode({
   const {
     label,
     stepId,
+    stepPath,
     description,
     withoutTopHandle,
     withoutBottomHandle,
@@ -53,7 +55,8 @@ export function WorkflowDefaultNode({
     isForEach,
   } = data;
 
-  const stepKey = parentWorkflowName ? `${parentWorkflowName}.${stepId || label}` : stepId || label;
+  // Use stepPath if available (for nested workflows), otherwise fall back to legacy behavior
+  const stepKey = stepPath || (parentWorkflowName ? `${parentWorkflowName}.${stepId || label}` : stepId || label);
 
   const step = steps[stepKey];
 

@@ -78,17 +78,22 @@ export function WorkflowNestedGraph({ stepGraph, open, workflowName }: WorkflowN
           nodes={nodes}
           edges={edges.map(e => ({
             ...e,
+            zIndex: e.zIndex ?? 1, // Ensure all edges have zIndex for group rendering
             style: {
               ...e.style,
               stroke:
-                steps[`${workflowName}.${e.data?.previousStepId}`]?.status === 'success' &&
-                steps[`${workflowName}.${e.data?.nextStepId}`]
+                // Use stepPath for nested workflow steps, fallback to stepId for backwards compatibility
+                steps[e.data?.previousStepPath as string]?.status === 'success' && steps[e.data?.nextStepPath as string]
                   ? '#22c55e'
-                  : e.data?.conditionNode &&
-                      !steps[`${workflowName}.${e.data?.previousStepId}`] &&
-                      Boolean(steps[`${workflowName}.${e.data?.nextStepId}`]?.status)
+                  : steps[`${workflowName}.${e.data?.previousStepId}`]?.status === 'success' &&
+                      steps[`${workflowName}.${e.data?.nextStepId}`]
                     ? '#22c55e'
-                    : undefined,
+                    : e.data?.conditionNode &&
+                        !steps[e.data?.previousStepPath as string] &&
+                        !steps[`${workflowName}.${e.data?.previousStepId}`] &&
+                        (Boolean(steps[e.data?.nextStepPath as string]?.status) || Boolean(steps[`${workflowName}.${e.data?.nextStepId}`]?.status))
+                      ? '#22c55e'
+                      : undefined,
             },
           }))}
           fitView

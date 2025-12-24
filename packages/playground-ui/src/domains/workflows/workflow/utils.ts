@@ -23,6 +23,7 @@ const defaultEdgeOptions = {
 interface ProcessContext {
   parentGroupId?: string; // The direct parent group ID (for parentId on nodes)
   idPrefix: string; // Prefix for node IDs (accumulated from all ancestor groups)
+  stepPathPrefix: string; // Prefix for step paths (using dot notation for run context lookups)
 }
 
 /**
@@ -36,19 +37,23 @@ function processStepGraph(
   edges: Edge[];
   firstNodeIds: string[];
   lastNodeIds: string[];
+  firstStepPaths: string[];
+  lastStepPaths: string[];
   width: number;
   height: number;
 } {
   if (!stepGraph || stepGraph.length === 0) {
-    return { nodes: [], edges: [], firstNodeIds: [], lastNodeIds: [], width: NODE_WIDTH, height: NODE_HEIGHT };
+    return { nodes: [], edges: [], firstNodeIds: [], lastNodeIds: [], firstStepPaths: [], lastStepPaths: [], width: NODE_WIDTH, height: NODE_HEIGHT };
   }
 
   let nodes: Node[] = [];
   let edges: Edge[] = [];
   let prevNodeIds: string[] = [];
   let prevStepIds: string[] = [];
+  let prevStepPaths: string[] = [];
   let allNodeIds: string[] = [];
   let firstNodeIds: string[] = [];
+  let firstStepPaths: string[] = [];
 
   for (let i = 0; i < stepGraph.length; i++) {
     const stepFlow = stepGraph[i];
@@ -59,6 +64,7 @@ function processStepGraph(
       nextStepFlow,
       prevNodeIds,
       prevStepIds,
+      prevStepPaths,
       allNodeIds,
       yIndex: i,
       context,
@@ -66,12 +72,14 @@ function processStepGraph(
 
     if (i === 0) {
       firstNodeIds = result.entryNodeIds;
+      firstStepPaths = result.exitStepPaths;
     }
 
     nodes.push(...result.nodes);
     edges.push(...result.edges);
     prevNodeIds = result.exitNodeIds;
     prevStepIds = result.exitStepIds;
+    prevStepPaths = result.exitStepPaths;
     allNodeIds.push(...result.nodes.map(n => n.id));
   }
 
@@ -134,6 +142,8 @@ function processStepGraph(
     edges,
     firstNodeIds,
     lastNodeIds: prevNodeIds,
+    firstStepPaths,
+    lastStepPaths: prevStepPaths,
     width: Math.max(totalWidth, 300),
     height: Math.max(totalHeight, 150),
   };
@@ -147,6 +157,7 @@ function processStep({
   nextStepFlow,
   prevNodeIds,
   prevStepIds,
+  prevStepPaths,
   allNodeIds,
   yIndex,
   context,
@@ -155,6 +166,7 @@ function processStep({
   nextStepFlow?: SerializedStepFlowEntry;
   prevNodeIds: string[];
   prevStepIds: string[];
+  prevStepPaths: string[];
   allNodeIds: string[];
   yIndex: number;
   context: ProcessContext;
@@ -164,19 +176,23 @@ function processStep({
   entryNodeIds: string[];
   exitNodeIds: string[];
   exitStepIds: string[];
+  exitStepPaths: string[];
 } {
   const makeNodeId = (id: string) => (context.idPrefix ? `${context.idPrefix}_${id}` : id);
+  const makeStepPath = (id: string) => (context.stepPathPrefix ? `${context.stepPathPrefix}.${id}` : id);
 
   if (stepFlow.type === 'step' || stepFlow.type === 'foreach') {
     const hasNestedWorkflow = stepFlow.step.component === 'WORKFLOW' && stepFlow.step.serializedStepFlow;
     const baseNodeId = makeNodeId(stepFlow.step.id);
     const nodeId = allNodeIds.includes(baseNodeId) ? `${baseNodeId}-${yIndex}` : baseNodeId;
+    const stepPath = makeStepPath(stepFlow.step.id);
 
     if (hasNestedWorkflow) {
       // Process nested workflow recursively
       const nestedResult = processStepGraph(stepFlow.step.serializedStepFlow!, {
         parentGroupId: nodeId,
         idPrefix: nodeId,
+        stepPathPrefix: stepPath,
       });
 
       // Create group node
@@ -188,6 +204,7 @@ function processStep({
         data: {
           label: stepFlow.step.id,
           stepId: stepFlow.step.id,
+          stepPath,
           description: stepFlow.step.description,
           stepGraph: stepFlow.step.serializedStepFlow,
           canSuspend: stepFlow.step.canSuspend,
@@ -198,12 +215,17 @@ function processStep({
       };
 
       // Edges: prev → first inside, last inside → (handled by caller)
-      const incomingEdges = prevNodeIds.flatMap(prevNodeId =>
+      const incomingEdges = prevNodeIds.flatMap((prevNodeId, i) =>
         nestedResult.firstNodeIds.map(firstNodeId => ({
           id: `e${prevNodeId}-${firstNodeId}`,
           source: prevNodeId,
           target: firstNodeId,
-          data: { previousStepId: prevStepIds[0], nextStepId: stepFlow.step.id },
+          data: {
+            previousStepId: prevStepIds[i] || prevStepIds[0],
+            nextStepId: stepFlow.step.id,
+            previousStepPath: prevStepPaths[i] || prevStepPaths[0],
+            nextStepPath: nestedResult.firstStepPaths?.[0] || stepPath,
+          },
           zIndex: 1,
           ...defaultEdgeOptions,
         })),
@@ -215,6 +237,7 @@ function processStep({
         entryNodeIds: nestedResult.firstNodeIds,
         exitNodeIds: nestedResult.lastNodeIds,
         exitStepIds: [stepFlow.step.id],
+        exitStepPaths: nestedResult.lastStepPaths || [stepPath],
       };
     }
 
@@ -227,6 +250,7 @@ function processStep({
       data: {
         label: stepFlow.step.id,
         stepId: stepFlow.step.id,
+        stepPath,
         description: stepFlow.step.description,
         mapConfig: stepFlow.step.mapConfig,
         canSuspend: stepFlow.step.canSuspend,
@@ -238,7 +262,12 @@ function processStep({
       id: `e${prevNodeId}-${nodeId}`,
       source: prevNodeId,
       target: nodeId,
-      data: { previousStepId: prevStepIds[i], nextStepId: stepFlow.step.id },
+      data: {
+        previousStepId: prevStepIds[i],
+        nextStepId: stepFlow.step.id,
+        previousStepPath: prevStepPaths[i],
+        nextStepPath: stepPath,
+      },
       ...(context.parentGroupId && { zIndex: 1 }),
       ...defaultEdgeOptions,
     }));
@@ -249,12 +278,14 @@ function processStep({
       entryNodeIds: [nodeId],
       exitNodeIds: [nodeId],
       exitStepIds: [stepFlow.step.id],
+      exitStepPaths: [stepPath],
     };
   }
 
   if (stepFlow.type === 'sleep' || stepFlow.type === 'sleepUntil') {
     const baseNodeId = makeNodeId(stepFlow.id);
     const nodeId = allNodeIds.includes(baseNodeId) ? `${baseNodeId}-${yIndex}` : baseNodeId;
+    const stepPath = makeStepPath(stepFlow.id);
 
     const node: Node = {
       id: nodeId,
@@ -263,6 +294,8 @@ function processStep({
       ...(context.parentGroupId && { parentId: context.parentGroupId, extent: 'parent' as const }),
       data: {
         label: stepFlow.id,
+        stepId: stepFlow.id,
+        stepPath,
         ...(stepFlow.type === 'sleepUntil' ? { date: stepFlow.date } : { duration: stepFlow.duration }),
       },
     };
@@ -271,7 +304,12 @@ function processStep({
       id: `e${prevNodeId}-${nodeId}`,
       source: prevNodeId,
       target: nodeId,
-      data: { previousStepId: prevStepIds[i], nextStepId: stepFlow.id },
+      data: {
+        previousStepId: prevStepIds[i],
+        nextStepId: stepFlow.id,
+        previousStepPath: prevStepPaths[i],
+        nextStepPath: stepPath,
+      },
       ...(context.parentGroupId && { zIndex: 1 }),
       ...defaultEdgeOptions,
     }));
@@ -282,6 +320,7 @@ function processStep({
       entryNodeIds: [nodeId],
       exitNodeIds: [nodeId],
       exitStepIds: [stepFlow.id],
+      exitStepPaths: [stepPath],
     };
   }
 
@@ -291,6 +330,7 @@ function processStep({
     let entryNodeIds: string[] = [];
     let exitNodeIds: string[] = [];
     let exitStepIds: string[] = [];
+    let exitStepPaths: string[] = [];
 
     stepFlow.steps.forEach((parallelStep, idx) => {
       const result = processStep({
@@ -298,6 +338,7 @@ function processStep({
         nextStepFlow,
         prevNodeIds,
         prevStepIds,
+        prevStepPaths,
         allNodeIds: [...allNodeIds, ...nodes.map(n => n.id)],
         yIndex,
         context,
@@ -314,9 +355,10 @@ function processStep({
       entryNodeIds.push(...result.entryNodeIds);
       exitNodeIds.push(...result.exitNodeIds);
       exitStepIds.push(...result.exitStepIds);
+      exitStepPaths.push(...result.exitStepPaths);
     });
 
-    return { nodes, edges, entryNodeIds, exitNodeIds, exitStepIds };
+    return { nodes, edges, entryNodeIds, exitNodeIds, exitStepIds, exitStepPaths };
   }
 
   if (stepFlow.type === 'conditional') {
@@ -324,10 +366,12 @@ function processStep({
     let edges: Edge[] = [];
     let exitNodeIds: string[] = [];
     let exitStepIds: string[] = [];
+    let exitStepPaths: string[] = [];
 
     stepFlow.steps.forEach((condStep, idx) => {
       const condition = stepFlow.serializedConditions[idx];
       const conditionNodeId = makeNodeId(condition.id);
+      const conditionStepPath = makeStepPath(condition.id);
 
       // Condition node
       const conditionNode: Node = {
@@ -337,6 +381,7 @@ function processStep({
         ...(context.parentGroupId && { parentId: context.parentGroupId, extent: 'parent' as const }),
         data: {
           label: condition.id,
+          stepPath: conditionStepPath,
           previousStepId: prevStepIds[prevStepIds.length - 1],
           nextStepId: condStep.step.id,
           isLarge: true,
@@ -351,7 +396,13 @@ function processStep({
           id: `e${prevNodeId}-${conditionNodeId}`,
           source: prevNodeId,
           target: conditionNodeId,
-          data: { previousStepId: prevStepIds[i], nextStepId: condStep.step.id },
+          data: {
+            previousStepId: prevStepIds[i],
+            nextStepId: condStep.step.id,
+            previousStepPath: prevStepPaths[i],
+            nextStepPath: conditionStepPath,
+            conditionNode: true,
+          },
           ...(context.parentGroupId && { zIndex: 1 }),
           ...defaultEdgeOptions,
         })),
@@ -363,6 +414,7 @@ function processStep({
         nextStepFlow: undefined,
         prevNodeIds: [conditionNodeId],
         prevStepIds: [condition.id],
+        prevStepPaths: [conditionStepPath],
         allNodeIds: [...allNodeIds, ...nodes.map(n => n.id)],
         yIndex: yIndex + 1,
         context,
@@ -372,6 +424,7 @@ function processStep({
       edges.push(...result.edges);
       exitNodeIds.push(...result.exitNodeIds);
       exitStepIds.push(...result.exitStepIds);
+      exitStepPaths.push(...result.exitStepPaths);
     });
 
     return {
@@ -380,6 +433,7 @@ function processStep({
       entryNodeIds: nodes.filter(n => n.type === 'condition-node').map(n => n.id),
       exitNodeIds,
       exitStepIds,
+      exitStepPaths,
     };
   }
 
@@ -389,11 +443,14 @@ function processStep({
     const baseNodeId = makeNodeId(loopStep.id);
     const nodeId = allNodeIds.includes(baseNodeId) ? `${baseNodeId}-${yIndex}` : baseNodeId;
     const conditionNodeId = makeNodeId(serializedCondition.id);
+    const stepPath = makeStepPath(loopStep.id);
+    const conditionStepPath = makeStepPath(serializedCondition.id);
 
     if (hasNestedWorkflow) {
       const nestedResult = processStepGraph(loopStep.serializedStepFlow!, {
         parentGroupId: nodeId,
         idPrefix: nodeId,
+        stepPathPrefix: stepPath,
       });
 
       const groupNode: Node = {
@@ -403,6 +460,8 @@ function processStep({
         ...(context.parentGroupId && { parentId: context.parentGroupId, extent: 'parent' as const }),
         data: {
           label: loopStep.id,
+          stepId: loopStep.id,
+          stepPath,
           description: loopStep.description,
           withoutTopHandle: false,
           withoutBottomHandle: false,
@@ -420,28 +479,39 @@ function processStep({
         ...(context.parentGroupId && { parentId: context.parentGroupId, extent: 'parent' as const }),
         data: {
           label: serializedCondition.id,
+          stepPath: conditionStepPath,
           previousStepId: loopStep.id,
           isLarge: true,
           conditions: [{ type: loopType, fnString: serializedCondition.fn }],
         },
       };
 
-      const incomingEdges = prevNodeIds.flatMap(prevNodeId =>
+      const incomingEdges = prevNodeIds.flatMap((prevNodeId, i) =>
         nestedResult.firstNodeIds.map(firstNodeId => ({
           id: `e${prevNodeId}-${firstNodeId}`,
           source: prevNodeId,
           target: firstNodeId,
-          data: { previousStepId: prevStepIds[0], nextStepId: loopStep.id },
+          data: {
+            previousStepId: prevStepIds[i] || prevStepIds[0],
+            nextStepId: loopStep.id,
+            previousStepPath: prevStepPaths[i] || prevStepPaths[0],
+            nextStepPath: nestedResult.firstStepPaths?.[0] || stepPath,
+          },
           zIndex: 1,
           ...defaultEdgeOptions,
         })),
       );
 
-      const toConditionEdges = nestedResult.lastNodeIds.map(lastNodeId => ({
+      const toConditionEdges = nestedResult.lastNodeIds.map((lastNodeId, i) => ({
         id: `e${lastNodeId}-${conditionNodeId}`,
         source: lastNodeId,
         target: conditionNodeId,
-        data: { previousStepId: loopStep.id, nextStepId: serializedCondition.id },
+        data: {
+          previousStepId: loopStep.id,
+          nextStepId: serializedCondition.id,
+          previousStepPath: nestedResult.lastStepPaths?.[i] || stepPath,
+          nextStepPath: conditionStepPath,
+        },
         zIndex: 1,
         ...defaultEdgeOptions,
       }));
@@ -452,6 +522,7 @@ function processStep({
         entryNodeIds: nestedResult.firstNodeIds,
         exitNodeIds: [conditionNodeId],
         exitStepIds: [loopStep.id],
+        exitStepPaths: [conditionStepPath],
       };
     }
 
@@ -463,6 +534,8 @@ function processStep({
       ...(context.parentGroupId && { parentId: context.parentGroupId, extent: 'parent' as const }),
       data: {
         label: loopStep.id,
+        stepId: loopStep.id,
+        stepPath,
         description: loopStep.description,
         canSuspend: loopStep.canSuspend,
       },
@@ -475,6 +548,7 @@ function processStep({
       ...(context.parentGroupId && { parentId: context.parentGroupId, extent: 'parent' as const }),
       data: {
         label: serializedCondition.id,
+        stepPath: conditionStepPath,
         previousStepId: loopStep.id,
         isLarge: true,
         conditions: [{ type: loopType, fnString: serializedCondition.fn }],
@@ -486,7 +560,12 @@ function processStep({
         id: `e${prevNodeId}-${nodeId}`,
         source: prevNodeId,
         target: nodeId,
-        data: { previousStepId: prevStepIds[i], nextStepId: loopStep.id },
+        data: {
+          previousStepId: prevStepIds[i],
+          nextStepId: loopStep.id,
+          previousStepPath: prevStepPaths[i],
+          nextStepPath: stepPath,
+        },
         ...(context.parentGroupId && { zIndex: 1 }),
         ...defaultEdgeOptions,
       })),
@@ -494,7 +573,12 @@ function processStep({
         id: `e${nodeId}-${conditionNodeId}`,
         source: nodeId,
         target: conditionNodeId,
-        data: { previousStepId: loopStep.id, nextStepId: serializedCondition.id },
+        data: {
+          previousStepId: loopStep.id,
+          nextStepId: serializedCondition.id,
+          previousStepPath: stepPath,
+          nextStepPath: conditionStepPath,
+        },
         ...(context.parentGroupId && { zIndex: 1 }),
         ...defaultEdgeOptions,
       },
@@ -506,10 +590,11 @@ function processStep({
       entryNodeIds: [nodeId],
       exitNodeIds: [conditionNodeId],
       exitStepIds: [loopStep.id],
+      exitStepPaths: [conditionStepPath],
     };
   }
 
-  return { nodes: [], edges: [], entryNodeIds: [], exitNodeIds: [], exitStepIds: [] };
+  return { nodes: [], edges: [], entryNodeIds: [], exitNodeIds: [], exitStepIds: [], exitStepPaths: [] };
 }
 
 export type ConditionConditionType = 'if' | 'else' | 'when' | 'until' | 'while' | 'dountil' | 'dowhile';
@@ -558,8 +643,6 @@ export const constructNodesAndEdges = ({
     return { nodes: [], edges: [] };
   }
 
-  const result = processStepGraph(stepGraph, { idPrefix: '' });
-  console.log(stepGraph)
-  console.log({nodes: result.nodes, edges: result.edges})
+  const result = processStepGraph(stepGraph, { idPrefix: '', stepPathPrefix: '' });
   return { nodes: result.nodes, edges: result.edges };
 };

@@ -89,7 +89,6 @@ function processStepGraph(
     rankdir: 'TB', // Top to bottom
     nodesep: 50, // Horizontal spacing between nodes in same rank
     ranksep: 80, // Vertical spacing between ranks
-    align: 'UL', // Align nodes to upper-left for consistent positioning
   });
 
   // Only layout nodes that belong directly to this level (not nested children)
